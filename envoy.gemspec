@@ -14,8 +14,10 @@ Gem::Specification.new do |s|
   s.description = 'SQS job consumer'
   s.license     = 'MIT'
 
-  s.files = Dir['{app,config,db,lib}/**/*', 'MIT-LICENSE', 'Rakefile', 'README.rdoc']
+  s.files = Dir['{app,bin,config,db,lib}/**/*', 'MIT-LICENSE', 'Rakefile', 'README.rdoc']
+  s.executables = s.files.grep(/^bin\//) { |f| File.basename(f) }
   s.test_files = Dir['test/**/*']
+  s.require_paths = ['lib']
 
   s.add_runtime_dependency 'aws-sdk-core'
   s.add_runtime_dependency 'celluloid', '>= 0.16'
@@ -36,7 +38,4 @@ Gem::Specification.new do |s|
   s.add_development_dependency 'pg'
   s.add_development_dependency 'pry-byebug'
   s.add_development_dependency 'rake'
-  s.add_development_dependency 'simplecov'
-  s.add_development_dependency 'vcr'
-  s.add_development_dependency 'webmock'
 end

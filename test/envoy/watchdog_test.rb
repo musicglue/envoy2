@@ -2,74 +2,83 @@ require_relative '../test_helper'
 
 describe Envoy::Watchdog do
   before do
-    @message_id = SecureRandom.uuid
-    @queue = Envoy::StubQueue.new 'test1'
+    config = Envoy::Configuration.new
+    config.add_queue 'watchdog_test'
+
+    @message = Envoy::Message.new SecureRandom.uuid, SecureRandom.uuid, 'watchdog_test', headers: {
+      id: SecureRandom.uuid,
+      type: 'type-1'
+    }
+
+    @queue = StubQueue.new 'watchdog_test', StubSqs.new, config
   end
 
-  def create_message
+  def create_watchdog
     described_class.new(
-      id: @message_id,
+      sqs_id: @message.sqs_id,
       message_topics: @queue.message_topics,
       worker: @worker,
       heartbeat_interval: 0.5)
   end
 
   describe 'the worker assigned to the message succeeds' do
-    class FastSucceedingWorker
-      include Envoy::Worker
-
-      def process
-      end
-    end
-
     before do
-      @worker = FastSucceedingWorker.new
-      @message = create_message
+      @worker = FastSucceedingWorker.new @message
+      @watchdog = create_watchdog
     end
 
     it 'publishes a message_processed event' do
-      @message.process
+      @watchdog.process
       sleep 0.2
-      @queue.acknowledged_messages.must_include @message_id
+      @queue.acknowledged_messages.must_include @message.sqs_id
     end
   end
 
   describe 'the worker assigned to the message fails' do
-    class FastFailingWorker
-      include Envoy::Worker
-    end
-
     before do
-      @worker = FastFailingWorker.new
-      @message = create_message
+      @worker = FastFailingWorker.new @message
+      @watchdog = create_watchdog
     end
 
     it 'publishes a message_failed event' do
-      @message.process
+      @watchdog.process
       sleep 0.2
-      @queue.unacknowledged_messages.must_include @message_id
+      @queue.unacknowledged_messages.must_include @message.sqs_id
     end
   end
 
   describe 'the worker assigned to the message succeeds after a heartbeat' do
-    class SlowSucceedingWorker
-      include Envoy::Worker
-
-      def process
-        sleep 1
-      end
-    end
-
     before do
-      @worker = SlowSucceedingWorker.new
-      @message = create_message
+      @worker = SlowSucceedingWorker.new @message
+      @watchdog = create_watchdog
     end
 
     it 'publishes a message_heartbeat event' do
-      @message.process
+      @watchdog.process
       sleep 1.2
-      @queue.message_heartbeats.must_include @message_id
-      @queue.acknowledged_messages.must_include @message_id
+      @queue.message_heartbeats.must_include @message.sqs_id
+      @queue.acknowledged_messages.must_include @message.sqs_id
+    end
+  end
+
+  describe 'the watchdog is terminated while the worker is still running' do
+    before do
+      @worker = SlowSucceedingWorker.new @message
+      @watchdog = create_watchdog
+    end
+
+    it 'does not raise any errors' do
+      Celluloid.shutdown_timeout = 0.1
+
+      @watchdog.process
+
+      begin
+        Celluloid.shutdown
+      rescue => e
+        @error = e
+      end
+
+      @error.must_be_nil
     end
   end
 end
